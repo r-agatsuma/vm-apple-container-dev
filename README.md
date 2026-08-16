@@ -29,7 +29,7 @@ Apple `container machine` 上で動かす、OCI イメージベースの小さ�
 ## クイックスタート
 
 ```sh
-git clone <this-repository>
+git clone https://github.com/r-agatsuma/apple-devvm.git
 cd apple-devvm
 
 ./scripts/up
