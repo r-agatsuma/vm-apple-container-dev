@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib.sh"
+
+require_cmd ssh
+exec ssh "$DEVVM_SSH_USER@$DEVVM_NAME.$DEVVM_DNS_DOMAIN" "$@"
