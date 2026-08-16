@@ -11,7 +11,7 @@ The repository deliberately treats `container machine` as a lightweight VM, not 
 - Password and keyboard-interactive SSH authentication are disabled.
 - Root SSH login is disabled.
 - Host SSH private keys are never copied into the VM.
-- On every `./scripts/up`, every `~/.ssh/*.pub` file on the Mac is synchronized to the guest user's `authorized_keys`.
+- On first build, `~/.ssh/id_*.pub` is copied into the image as `/etc/skel/.ssh/authorized_keys`; private keys are never included.
 - SSH host private keys are generated per machine on first boot; they are not baked into the OCI image.
 - The guest filesystem is persistent. Credentials created by tools such as Codex can therefore remain inside the VM until the machine is destroyed.
 
@@ -22,7 +22,7 @@ The repository deliberately treats `container machine` as a lightweight VM, not 
 - Apple silicon Mac supported by Apple `container`
 - Apple `container` installed and initialized
 - Rosetta 2 if your local `container` setup requires it
-- At least one public key under `~/.ssh/*.pub`
+- At least one public key matching `~/.ssh/id_*.pub`
 
 The scripts use the current Apple `container machine` CLI, including `--home-mount none` and the local DNS service.
 
@@ -42,10 +42,12 @@ The first `up` does the following:
 2. Creates the local `.machine` DNS domain if necessary. This step uses `sudo`.
 3. Builds `local/devvm:latest` from the Dockerfile.
 4. Creates a persistent machine named `devvm` with 2 CPUs, 2 GiB RAM, and host home sharing disabled.
-5. Copies the contents of the Mac's `~/.ssh/*.pub` files, via stdin only, to the guest user's `~/.ssh/authorized_keys`.
+5. Collects `~/.ssh/id_*.pub` into a temporary build input and bakes it into `/etc/skel/.ssh/authorized_keys`. Apple container machine copies `/etc/skel` into the new Linux user's home on first boot.
 6. Verifies that `sshd` is active and key-only authentication is configured.
 
-Later `up` runs reuse the existing persistent machine and resynchronize `authorized_keys`; they do not rebuild or replace its root filesystem. If the Dockerfile changes, recreate the machine with `./scripts/destroy` followed by `./scripts/up` to apply the new image. That intentionally discards machine-local state.
+Later `up` runs reuse the existing persistent machine; they do not rebuild or replace its root filesystem. If the Dockerfile or authorized key set changes, recreate the machine with `./scripts/destroy` followed by `./scripts/up` to apply the new image. That intentionally discards machine-local state.
+
+The default key selection is intentionally simple: `~/.ssh/id_*.pub`. If you want a different public key set, edit that glob in `scripts/up`.
 
 After that:
 

@@ -21,6 +21,13 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Apple container machine copies /etc/skel into the host-matching user's home
+# on first boot. Public keys are prepared by scripts/up before image build.
+RUN mkdir -p /etc/skel/.ssh \
+    && chmod 0700 /etc/skel/.ssh
+COPY .authorized_keys /etc/skel/.ssh/authorized_keys
+RUN chmod 0600 /etc/skel/.ssh/authorized_keys
+
 # Apple container machine provisions a host-matching user on first boot.
 # Inside the VM that user may sudo without a password; SSH itself is key-only.
 RUN printf '%s\n' 'ALL ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/devvm \
