@@ -79,6 +79,26 @@ Codex CLI は image build 時に npm から最新版をグローバルインス�
 codex
 ```
 
+## 開発環境のカスタマイズ
+
+Dockerfile は multi-stage 構成です。
+
+- `devvm-base`: systemd、SSH、Codex CLI、共通の開発ツールを含む共通ベースです。通常はここを変更する必要はありません。
+- `dev`: 実際に build される最終 stage です。Python、Go、Rust、DB client、プロジェクト固有 CLI など、必要な開発ツールはこの stage に追加してください。
+
+Dockerfile の末尾にある `FROM devvm-base AS dev` 以降を自由に編集できます。例えば Python を追加する場合:
+
+```dockerfile
+FROM devvm-base AS dev
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-venv \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+Dockerfile を変更した場合は、既存 machine を `./scripts/destroy` で削除してから `./scripts/up` で作り直してください。
+
 ## ライフサイクル
 
 ```sh

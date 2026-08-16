@@ -1,4 +1,4 @@
-FROM debian:13
+FROM debian:13 AS devvm-base
 
 ARG NODE_MAJOR=22
 
@@ -113,3 +113,17 @@ RUN rm -f /etc/ssh/ssh_host_* \
 EXPOSE 22
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
+
+
+FROM devvm-base AS dev
+
+# -----------------------------------------------------------------------------
+# Development environment customization
+# -----------------------------------------------------------------------------
+# Add project- or language-specific tools here. Keep devvm-base generic.
+#
+# Example:
+# RUN apt-get update \
+#     && apt-get install -y --no-install-recommends python3 python3-venv \
+#     && apt-get clean \
+#     && rm -rf /var/lib/apt/lists/*
