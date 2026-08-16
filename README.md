@@ -61,6 +61,39 @@ ssh "$USER@devvm.machine"
 ./scripts/ssh
 ```
 
+## 初回の開発開始
+
+この VM ではソースコードを macOS から mount せず、VM 内に clone または作成する運用を基本とします。
+
+既存の GitHub repository で作業する場合は、初回に VM 内で GitHub CLI へログインしてから clone してください。
+
+```sh
+gh auth login
+
+mkdir -p ~/src
+cd ~/src
+gh repo clone owner/repository
+cd repository
+
+codex
+```
+
+`gh auth login` の認証情報は persistent machine filesystem に保存されるため、通常は machine ごとに一度実行すれば十分です。
+
+まだ repository がなく、新しいプロジェクトをゼロから始める場合も `~/src` を作業場所にします。`~/src` で Codex を起動し、最初の指示で「新規プロジェクトであること」「プロジェクト名のディレクトリを作成し、その中で実装を開始すること」を明示してください。GitHub に公開・push する予定がある場合は、あらかじめ `gh auth login` も実行しておきます。
+
+```sh
+mkdir -p ~/src
+cd ~/src
+codex
+```
+
+例えば Codex には、次のように依頼します。
+
+```text
+新規プロジェクトとして <project-name> ディレクトリを作成し、その中を作業ディレクトリとして開発を開始してください。必要であれば Git repository も初期化してください。
+```
+
 ## 開発ツール
 
 ベースイメージには Codex CLI を利用するための共通ツールを含めています。
