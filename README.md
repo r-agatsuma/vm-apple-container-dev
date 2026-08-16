@@ -1,32 +1,32 @@
 # apple-devvm
 
-A small, persistent Linux development VM built from an OCI image and run with Apple `container machine`.
+Apple `container machine` 上で動かす、OCI イメージベースの小さな永続 Linux 開発 VM です。
 
-The repository deliberately treats `container machine` as a lightweight VM, not as an ephemeral application container.
+このリポジトリでは `container machine` を一時的なアプリケーションコンテナではなく、軽量 VM として扱います。
 
-## Security defaults
+## セキュリティのデフォルト
 
-- macOS home-directory sharing is disabled with `--home-mount none`.
-- SSH accepts public-key authentication only.
-- Password and keyboard-interactive SSH authentication are disabled.
-- Root SSH login is disabled.
-- Host SSH private keys are never copied into the VM.
-- On first build, `~/.ssh/id_*.pub` is copied into the image as `/etc/skel/.ssh/authorized_keys`; private keys are never included.
-- SSH host private keys are generated per machine on first boot; they are not baked into the OCI image.
-- The guest filesystem is persistent. Credentials created by tools such as Codex can therefore remain inside the VM until the machine is destroyed.
+- macOS のホームディレクトリ共有は `--home-mount none` で無効化します。
+- SSH は公開鍵認証のみ許可します。
+- SSH のパスワード認証と keyboard-interactive 認証は無効化します。
+- root の SSH ログインは無効化します。
+- Mac 側の SSH 秘密鍵を VM にコピーしません。
+- 初回ビルド時に `~/.ssh/id_*.pub` を `/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。秘密鍵は含めません。
+- SSH host private key は OCI イメージへ組み込まず、machine の初回起動時に machine ごとに生成します。
+- guest filesystem は永続化されます。そのため Codex などのツールで作成した credential は、machine を削除するまで VM 内に保持できます。
 
-`container machine rm` deletes that persistent machine state.
+`container machine rm` を実行すると、この永続 machine state も削除されます。
 
-## Prerequisites
+## 必要なもの
 
-- Apple silicon Mac supported by Apple `container`
-- Apple `container` installed and initialized
-- Rosetta 2 if your local `container` setup requires it
-- At least one public key matching `~/.ssh/id_*.pub`
+- Apple `container` をサポートする Apple silicon Mac
+- インストールおよび初期化済みの Apple `container`
+- ローカルの `container` 環境で必要な場合は Rosetta 2
+- `~/.ssh/id_*.pub` に一致する公開鍵が1つ以上
 
-The scripts use the current Apple `container machine` CLI, including `--home-mount none` and the local DNS service.
+スクリプトは `--home-mount none` とローカル DNS service を含む、現在の Apple `container machine` CLI を前提としています。
 
-## Quick start
+## クイックスタート
 
 ```sh
 git clone <this-repository>
@@ -36,32 +36,32 @@ cd apple-devvm
 ./scripts/ssh
 ```
 
-The first `up` does the following:
+初回の `./scripts/up` は次を行います。
 
-1. Starts Apple `container` services if necessary.
-2. Creates the local `.machine` DNS domain if necessary. This step uses `sudo`.
-3. Builds `local/devvm:latest` from the Dockerfile.
-4. Creates a persistent machine named `devvm` with 2 CPUs, 2 GiB RAM, and host home sharing disabled.
-5. Collects `~/.ssh/id_*.pub` into a temporary build input and bakes it into `/etc/skel/.ssh/authorized_keys`. Apple container machine copies `/etc/skel` into the new Linux user's home on first boot.
-6. Verifies that `sshd` is active and key-only authentication is configured.
+1. 必要であれば Apple `container` service を起動します。
+2. 必要であればローカルの `.machine` DNS domain を作成します。この処理では `sudo` を使用します。
+3. `~/.ssh/id_*.pub` を一時的な build input にまとめ、`/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。Apple container machine は初回起動時に `/etc/skel` を新しい Linux user の home へコピーします。
+4. Dockerfile から `local/devvm:latest` をビルドします。
+5. `devvm` という名前で、2 CPU / 2 GiB RAM、host home sharing 無効の永続 machine を作成します。
+6. `sshd` が起動しており、公開鍵認証のみの設定になっていることを確認します。
 
-Later `up` runs reuse the existing persistent machine; they do not rebuild or replace its root filesystem. If the Dockerfile or authorized key set changes, recreate the machine with `./scripts/destroy` followed by `./scripts/up` to apply the new image. That intentionally discards machine-local state.
+2回目以降の `./scripts/up` は既存の永続 machine を再利用し、root filesystem の再ビルドや置換は行いません。Dockerfile または使用する公開鍵を変更した場合は、`./scripts/destroy` のあとに `./scripts/up` を実行して machine を作り直してください。この操作では machine 内に保存された state が破棄されます。
 
-The default key selection is intentionally simple: `~/.ssh/id_*.pub`. If you want a different public key set, edit that glob in `scripts/up`.
+デフォルトの公開鍵選択は意図的に単純で、`~/.ssh/id_*.pub` を使用します。別の公開鍵を使いたい場合は、`scripts/up` 内のこの glob を変更してください。
 
-After that:
+起動後は次のコマンドで接続できます。
 
 ```sh
 ssh "$USER@devvm.machine"
 ```
 
-or simply:
+または、単に次を実行します。
 
 ```sh
 ./scripts/ssh
 ```
 
-## Lifecycle
+## ライフサイクル
 
 ```sh
 ./scripts/status
@@ -70,11 +70,11 @@ or simply:
 ./scripts/destroy
 ```
 
-`stop` preserves the VM filesystem. `destroy` asks for confirmation, then removes the machine and its persistent state. It intentionally does not remove the OCI image or the shared `.machine` DNS domain.
+`stop` は VM filesystem を保持したまま machine を停止します。`destroy` は確認後に machine とその永続 state を削除します。OCI image と共有の `.machine` DNS domain は削除しません。
 
-## Configuration
+## 設定
 
-Environment variables can override the small set of machine defaults:
+少数の machine 設定は環境変数で上書きできます。
 
 ```sh
 DEVVM_NAME=mydev \
@@ -83,21 +83,21 @@ DEVVM_MEMORY=4G \
 ./scripts/up
 ```
 
-Available variables:
+利用可能な環境変数:
 
-- `DEVVM_NAME` — default: `devvm`
-- `DEVVM_IMAGE` — default: `local/devvm:latest`
-- `DEVVM_CPUS` — default: `2`
-- `DEVVM_MEMORY` — default: `2G`
-- `DEVVM_DNS_DOMAIN` — default: `machine`
-- `DEVVM_SSH_USER` — default: current macOS username
+- `DEVVM_NAME` — デフォルト: `devvm`
+- `DEVVM_IMAGE` — デフォルト: `local/devvm:latest`
+- `DEVVM_CPUS` — デフォルト: `2`
+- `DEVVM_MEMORY` — デフォルト: `2G`
+- `DEVVM_DNS_DOMAIN` — デフォルト: `machine`
+- `DEVVM_SSH_USER` — デフォルト: 現在の macOS user name
 
-If a machine with the selected name already exists, `up` refuses to continue unless `container machine inspect` reports `homeMount: none`.
+同名の machine がすでに存在する場合、`container machine inspect` が `homeMount: none` を返さなければ `./scripts/up` は処理を拒否します。
 
-## Intended state split
+## State の分離
 
-The OCI image contains reproducible development-system state: packages, systemd, OpenSSH configuration, and common tools.
+OCI image には、packages、systemd、OpenSSH 設定、共通ツールなど、再現可能な開発環境の state を含めます。
 
-The machine filesystem contains user-specific persistent state: cloned repositories, shell history, caches, tool logins, and similar workstation data.
+machine filesystem には、clone した repository、shell history、cache、tool login など、user 固有の永続 state を保持します。
 
-The macOS home directory is not mounted into the machine.
+macOS の home directory は machine に mount しません。
