@@ -1,23 +1,51 @@
 FROM debian:13
 
+ARG NODE_MAJOR=22
+
 ENV container=container
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        bubblewrap \
         build-essential \
         ca-certificates \
         curl \
         dbus \
+        fd-find \
+        fzf \
+        gh \
         git \
+        git-lfs \
+        gnupg \
         iproute2 \
         iputils-ping \
+        jq \
         less \
         openssh-server \
+        ripgrep \
         sudo \
         systemd \
         systemd-sysv \
+        unzip \
         vim-tiny \
         wget \
+        zip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Debian installs fd-find as `fdfind`; expose the conventional `fd` name too.
+RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
+
+# Codex CLI runtime. Debian 13 ships Node.js 20, so use NodeSource for Node 22.
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" -o /tmp/nodesource_setup.sh \
+    && bash /tmp/nodesource_setup.sh \
+    && rm -f /tmp/nodesource_setup.sh \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @openai/codex \
+    && npm cache clean --force \
+    && node --version \
+    && npm --version \
+    && codex --version \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

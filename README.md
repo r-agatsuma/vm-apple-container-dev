@@ -61,6 +61,24 @@ ssh "$USER@devvm.machine"
 ./scripts/ssh
 ```
 
+## 開発ツール
+
+ベースイメージには Codex CLI を利用するための共通ツールを含めています。
+
+- Node.js 22 / npm
+- Codex CLI (`@openai/codex`)
+- Git / Git LFS / GitHub CLI (`gh`)
+- `jq`, `ripgrep`, `fd`, `fzf`
+- `build-essential`, `bubblewrap`
+- `curl`, `wget`, `less`, `unzip`, `zip`
+
+Codex CLI は image build 時に npm から最新版をグローバルインストールします。初回は VM 内で `codex` を起動してログインしてください。ログイン情報は persistent machine filesystem に保持されます。
+
+```sh
+./scripts/ssh
+codex
+```
+
 ## ライフサイクル
 
 ```sh
