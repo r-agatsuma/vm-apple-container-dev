@@ -8,6 +8,8 @@ require_cmd container
 require_cmd ssh
 require_cmd awk
 require_cmd find
+require_cmd base64
+require_cmd tr
 
 if ! container system status >/dev/null 2>&1; then
     log "starting Apple container services"
@@ -56,12 +58,20 @@ done < "$KEY_LIST"
 awk 'NF && !seen[$0]++' "$KEY_DATA" > "$KEY_DATA.tmp"
 mv "$KEY_DATA.tmp" "$KEY_DATA"
 
+# `container machine run -i` currently goes through Apple container's
+# interactive stdio path, which may fail when stdin is redirected from a file
+# (for example with "Inappropriate ioctl for device"). Public keys are not
+# secret, so pass the small authorized_keys payload as base64 in the exec
+# environment instead of attaching stdin. This also keeps private keys on the
+# host and avoids depending on a TTY.
+KEY_DATA_B64=$(base64 < "$KEY_DATA" | tr -d '\n')
+
 log "syncing host public keys into guest authorized_keys"
 container machine run \
     -n "$DEVVM_NAME" \
     --root \
     -e "DEVVM_USER=$DEVVM_SSH_USER" \
-    -i \
+    -e "DEVVM_AUTHORIZED_KEYS_B64=$KEY_DATA_B64" \
     -- /bin/sh -ceu '
         user=$DEVVM_USER
         home=$(getent passwd "$user" | cut -d: -f6)
@@ -69,10 +79,11 @@ container machine run \
         group=$(id -gn "$user")
 
         install -d -m 700 -o "$user" -g "$group" "$home/.ssh"
-        cat > "$home/.ssh/authorized_keys"
+        printf "%s" "$DEVVM_AUTHORIZED_KEYS_B64" \
+            | base64 -d > "$home/.ssh/authorized_keys"
         chown "$user:$group" "$home/.ssh/authorized_keys"
         chmod 600 "$home/.ssh/authorized_keys"
-    ' < "$KEY_DATA"
+    '
 
 log "checking sshd"
 container machine run -n "$DEVVM_NAME" -- systemctl is-active --quiet ssh
