@@ -121,6 +121,7 @@ codex
 - Codex CLI (`@openai/codex`)
 - iro (`github.com/r-agatsuma/iro/cmd/iro@latest`)
 - Git / Git LFS / GitHub CLI (`gh`)
+- `tmux`
 - `jq`, `ripgrep`, `fd`, `fzf`
 - `build-essential`, `bubblewrap`
 - `curl`, `wget`, `less`, `unzip`, `zip`
@@ -131,6 +132,20 @@ Codex CLI は image build 時に npm から最新版をグローバルインス�
 ./scripts/ssh
 codex
 ```
+
+長時間の SSH 作業では、クライアントの切断後も作業を継続できるように `tmux` の利用を推奨します。VM に SSH 接続した後、次のコマンドでセッションを作成し、その中でシェル、Codex、iro などを実行してください。
+
+```sh
+tmux new -s dev
+```
+
+`Ctrl-b` を押してから `d` を押すと、セッションを動かしたままデタッチできます。SSH が切断された場合も、再接続後に次のコマンドで同じセッションへ戻れます。
+
+```sh
+tmux attach -t dev
+```
+
+セッションが継続するのは VM が稼働している間です。VM の停止や再起動をまたいでプロセスが保持されるわけではありません。
 
 ## 開発環境のカスタマイズ
 

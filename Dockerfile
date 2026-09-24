@@ -33,6 +33,7 @@ RUN apt-get update \
         sudo \
         systemd \
         systemd-sysv \
+        tmux \
         unzip \
         vim-tiny \
         wget \
