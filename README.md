@@ -33,7 +33,8 @@ git clone https://github.com/r-agatsuma/vm-apple-container-dev.git
 cd vm-apple-container-dev
 
 ./scripts/init
-./scripts/ssh
+# 表示された案内に従って ~/.ssh/config を設定してから接続
+ssh devvm.machine
 ```
 
 初回の `./scripts/init` は次を行います。
@@ -43,7 +44,8 @@ cd vm-apple-container-dev
 3. `~/.ssh/id_*.pub` と `pubkeys/*.pub` の空でない行を重複排除して一時的な build input にまとめ、`/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。Apple container machine は初回起動時に `/etc/skel` を新しい Linux user の home へコピーします。
 4. Dockerfile から `local/devvm:latest` をビルドします。
 5. `devvm` という名前で、2 CPU / 2 GiB RAM、host home sharing 無効の永続 machine を作成します。
-6. `sshd` が起動しており、公開鍵認証のみの設定になっていることを確認します。
+6. `homeMount=none` と SSH service の起動を確認し、root で `sshd -T` を実行して公開鍵認証のみの設定を検証します。
+7. 検証に成功した場合のみ、OpenSSH config の例と接続手順を表示します。
 
 `init` は初期構築専用です。同名の machine が存在するとビルドや置換をせず失敗し、`./scripts/up` を案内します。
 
@@ -58,19 +60,7 @@ Dockerfile または公開鍵を変更した場合は、明示的に再構築し
 
 公開鍵は `~/.ssh/id_*.pub` とリポジトリ内の `pubkeys/*.pub` の両方から収集します。片方は空でも構いませんが、合計1つ以上の空でない公開鍵が必要です。`pubkeys/` は公開鍵専用です。秘密鍵を置かないでください。`.gitkeep` など `.pub` 以外のファイルは読み込みません。一時 build input `.authorized_keys` はビルド後（失敗時も）に削除します。
 
-起動後は次のコマンドで接続できます。
-
-```sh
-ssh "$USER@devvm.machine"
-```
-
-または、単に次を実行します。
-
-```sh
-./scripts/ssh
-```
-
-`init` と `up` は SSH コマンドと次のような OpenSSH config を表示します。
+`init` と `up` は検証に成功すると、次のような OpenSSH config を表示します。
 
 ```sshconfig
 Host devvm.machine
@@ -78,7 +68,24 @@ Host devvm.machine
     User <macOS user name>
 ```
 
-表示は `DEVVM_NAME`、`DEVVM_DNS_DOMAIN`、`DEVVM_SSH_USER` を反映します。必要なら手動で `~/.ssh/config` に追加してください。スクリプトはこのファイルを変更せず、使用する秘密鍵を決められないため `IdentityFile` も出力しません。
+表示は `DEVVM_NAME`、`DEVVM_DNS_DOMAIN`、`DEVVM_SSH_USER` を反映します。手動で `~/.ssh/config` に追加してください。非標準のファイル名の秘密鍵を使う場合は、対応する Host ブロックに適切な設定を手動で追加します。次はプレースホルダーを使った例です。
+
+```sshconfig
+    IdentityFile ~/.ssh/<private-key>
+```
+
+秘密鍵の選択には `ssh-agent` などの標準 OpenSSH の仕組みも利用できます。設定後はホストの OpenSSH で接続します。
+
+```sh
+ssh devvm.machine
+```
+
+責任の範囲は次のとおりです。
+
+- リポジトリ: 公開鍵の配置、公開鍵認証のみの sshd 設定、接続先の host/user 情報の表示。
+- ユーザー / ホストの SSH 設定: 秘密鍵の選択、`IdentityFile` や `ssh-agent` の設定、`~/.ssh/config` の管理、SSH 接続の開始。
+
+スクリプトは秘密鍵の推測やコピー、`ssh-agent` の管理、`~/.ssh/config` の変更を行いません。具体的な `IdentityFile` のパスも自動では出力しません。`init` と `up` 自体にはホストの `ssh` 実行ファイルは不要です。
 
 ## 初回の開発開始
 
@@ -129,7 +136,7 @@ codex
 Codex CLI は image build 時に npm から最新版をグローバルインストールします。初回は VM 内で `codex` を起動してログインしてください。ログイン情報は persistent machine filesystem に保持されます。
 
 ```sh
-./scripts/ssh
+ssh devvm.machine
 codex
 ```
 
@@ -170,14 +177,24 @@ Dockerfile を変更した場合は、既存 machine を `./scripts/destroy` で
 
 ## ライフサイクル
 
+公開ライフサイクルコマンドは次の3つです。`scripts/lib.sh` は内部実装です。
+
 ```sh
-./scripts/status
-./scripts/stop
+./scripts/init
 ./scripts/up
 ./scripts/destroy
 ```
 
-`stop` は VM filesystem を保持したまま machine を停止します。`destroy` は確認後に machine とその永続 state を削除します。OCI image と共有の `.machine` DNS domain は削除しません。
+`init` はイメージのビルドと永続 machine の作成、`up` は既存 machine の起動・再利用を行います。両方ともセキュリティ状態の検証後に SSH 設定を案内します。`destroy` は確認後に machine とその永続 state を削除します。OCI image と共有の `.machine` DNS domain は削除しません。
+
+状態確認や停止には直接 `container` を使用します（名前を変更した場合は `devvm` を置き換えてください）。停止しても VM filesystem は保持されます。
+
+```sh
+container machine ls
+container machine inspect devvm
+container machine run -n devvm -- systemctl status ssh --no-pager
+container machine stop devvm
+```
 
 ## 設定
 

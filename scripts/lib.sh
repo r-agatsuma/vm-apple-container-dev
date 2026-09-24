@@ -59,7 +59,7 @@ ensure_dns_domain() {
 validate_ssh() {
     log "checking sshd"
     container machine run -n "$DEVVM_NAME" -- systemctl is-active --quiet ssh
-    ssh_config=$(container machine run -n "$DEVVM_NAME" -- /usr/sbin/sshd -T)
+    ssh_config=$(container machine run -n "$DEVVM_NAME" --root -- /usr/sbin/sshd -T)
     for setting in \
         'pubkeyauthentication yes' \
         'authenticationmethods publickey' \
@@ -76,9 +76,11 @@ validate_ssh() {
 
 print_connection_info() {
     printf '\nReady.\n'
-    printf '  %s\n' "$SCRIPT_DIR/ssh"
-    printf '  ssh %s@%s.%s\n' "$DEVVM_SSH_USER" "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN"
     printf '\nOpenSSH config (add manually to ~/.ssh/config):\n'
     printf 'Host %s.%s\n    HostName %s.%s\n    User %s\n' \
         "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN" "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN" "$DEVVM_SSH_USER"
+    printf '\nFor a non-default private-key filename, manually add the appropriate entry to this Host block, for example:\n'
+    printf '    IdentityFile ~/.ssh/<private-key>\n'
+    printf 'Private-key selection and ssh-agent configuration are your responsibility.\n'
+    printf '\nAfter configuring SSH, connect with:\n  ssh %s.%s\n' "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN"
 }
