@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib.sh"
+
+require_cmd container
+require_cmd ssh
+require_cmd awk
+require_cmd grep
+require_cmd rm
+
+ensure_container_services
+
+if machine_exists; then
+    die "machine '$DEVVM_NAME' already exists; use ./scripts/up"
+fi
+
+ensure_dns_domain
+
+AUTHORIZED_KEYS="$REPO_ROOT/.authorized_keys"
+[ ! -e "$AUTHORIZED_KEYS" ] && [ ! -L "$AUTHORIZED_KEYS" ] || die "$AUTHORIZED_KEYS already exists; refusing to overwrite it"
+trap 'rm -f "$AUTHORIZED_KEYS"' EXIT
+trap 'exit 1' HUP INT TERM
+
+# Only public-key files are read; either source may be absent.
+# awk reads files separately, including keys without a trailing newline.
+set --
+for key in "$HOME"/.ssh/id_*.pub "$REPO_ROOT"/pubkeys/*.pub; do
+    [ -f "$key" ] || continue
+    set -- "$@" "$key"
+done
+[ "$#" -gt 0 ] || die "no public keys found in $HOME/.ssh/id_*.pub or $REPO_ROOT/pubkeys/*.pub"
+awk 'NF && !seen[$0]++' "$@" > "$AUTHORIZED_KEYS"
+[ -s "$AUTHORIZED_KEYS" ] || die "authorized_keys build input is empty"
+
+log "building $DEVVM_IMAGE with public keys"
+container build -t "$DEVVM_IMAGE" "$REPO_ROOT"
+rm -f "$AUTHORIZED_KEYS"
+trap - EXIT HUP INT TERM
+
+log "creating machine $DEVVM_NAME (home mount disabled)"
+container machine create \
+    --name "$DEVVM_NAME" \
+    --set-default \
+    --cpus "$DEVVM_CPUS" \
+    --memory "$DEVVM_MEMORY" \
+    --home-mount none \
+    "$DEVVM_IMAGE"
+
+assert_home_mount_none
+container machine run -n "$DEVVM_NAME" -- true >/dev/null
+validate_ssh
+print_connection_info
