@@ -1,4 +1,11 @@
+FROM golang:latest AS iro-builder
+
+RUN CGO_ENABLED=0 GOBIN=/out go install github.com/r-agatsuma/iro/cmd/iro@latest
+
 FROM debian:13 AS devvm-base
+
+COPY --from=iro-builder /out/iro /usr/local/bin/iro
+RUN iro version
 
 ARG NODE_MAJOR=22
 
@@ -50,7 +57,7 @@ RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" -o /tmp/nodeso
     && rm -rf /var/lib/apt/lists/*
 
 # Apple container machine copies /etc/skel into the host-matching user's home
-# on first boot. Public keys are prepared by scripts/up before image build.
+# on first boot. Public keys are prepared by scripts/init before image build.
 RUN mkdir -p /etc/skel/.ssh \
     && chmod 0700 /etc/skel/.ssh
 COPY .authorized_keys /etc/skel/.ssh/authorized_keys

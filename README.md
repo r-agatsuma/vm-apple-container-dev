@@ -11,7 +11,7 @@ Apple `container machine` 上で動かす、OCI イメージベースの小さ�
 - SSH のパスワード認証と keyboard-interactive 認証は無効化します。
 - root の SSH ログインは無効化します。
 - Mac 側の SSH 秘密鍵を VM にコピーしません。
-- 初回ビルド時に `~/.ssh/id_*.pub` を `/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。秘密鍵は含めません。
+- 初回ビルド時に `~/.ssh/id_*.pub` と `pubkeys/*.pub` を `/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。秘密鍵は含めません。
 - SSH host private key は OCI イメージへ組み込まず、machine の初回起動時に machine ごとに生成します。
 - guest filesystem は永続化されます。そのため Codex などのツールで作成した credential は、machine を削除するまで VM 内に保持できます。
 
@@ -22,7 +22,7 @@ Apple `container machine` 上で動かす、OCI イメージベースの小さ�
 - Apple `container` をサポートする Apple silicon Mac
 - インストールおよび初期化済みの Apple `container`
 - ローカルの `container` 環境で必要な場合は Rosetta 2
-- `~/.ssh/id_*.pub` に一致する公開鍵が1つ以上
+- `~/.ssh/id_*.pub` または `pubkeys/*.pub` に公開鍵が合計1つ以上
 
 スクリプトは `--home-mount none` とローカル DNS service を含む、現在の Apple `container machine` CLI を前提としています。
 
@@ -32,22 +32,31 @@ Apple `container machine` 上で動かす、OCI イメージベースの小さ�
 git clone https://github.com/r-agatsuma/vm-apple-container-dev.git
 cd vm-apple-container-dev
 
-./scripts/up
+./scripts/init
 ./scripts/ssh
 ```
 
-初回の `./scripts/up` は次を行います。
+初回の `./scripts/init` は次を行います。
 
 1. 必要であれば Apple `container` service を起動します。
 2. 必要であればローカルの `.machine` DNS domain を作成します。この処理では `sudo` を使用します。
-3. `~/.ssh/id_*.pub` を一時的な build input にまとめ、`/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。Apple container machine は初回起動時に `/etc/skel` を新しい Linux user の home へコピーします。
+3. `~/.ssh/id_*.pub` と `pubkeys/*.pub` の空でない行を重複排除して一時的な build input にまとめ、`/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。Apple container machine は初回起動時に `/etc/skel` を新しい Linux user の home へコピーします。
 4. Dockerfile から `local/devvm:latest` をビルドします。
 5. `devvm` という名前で、2 CPU / 2 GiB RAM、host home sharing 無効の永続 machine を作成します。
 6. `sshd` が起動しており、公開鍵認証のみの設定になっていることを確認します。
 
-2回目以降の `./scripts/up` は既存の永続 machine を再利用し、root filesystem の再ビルドや置換は行いません。Dockerfile または使用する公開鍵を変更した場合は、`./scripts/destroy` のあとに `./scripts/up` を実行して machine を作り直してください。この操作では machine 内に保存された state が破棄されます。
+`init` は初期構築専用です。同名の machine が存在するとビルドや置換をせず失敗し、`./scripts/up` を案内します。
 
-デフォルトの公開鍵選択は意図的に単純で、`~/.ssh/id_*.pub` を使用します。別の公開鍵を使いたい場合は、`scripts/up` 内のこの glob を変更してください。
+通常の起動には `./scripts/up` を使います。既存 machine の `homeMount=none` を検証して起動し、SSH を確認します。ビルドや machine 作成は行いません。machine が存在しない場合は失敗し、`./scripts/init` を案内します。
+
+Dockerfile または公開鍵を変更した場合は、明示的に再構築してください。既存 machine への鍵の同期や自動再構築は行いません。この操作では machine 内に保存された state が破棄されます。
+
+```sh
+./scripts/destroy
+./scripts/init
+```
+
+公開鍵は `~/.ssh/id_*.pub` とリポジトリ内の `pubkeys/*.pub` の両方から収集します。片方は空でも構いませんが、合計1つ以上の空でない公開鍵が必要です。`pubkeys/` は公開鍵専用です。秘密鍵を置かないでください。`.gitkeep` など `.pub` 以外のファイルは読み込みません。一時 build input `.authorized_keys` はビルド後（失敗時も）に削除します。
 
 起動後は次のコマンドで接続できます。
 
@@ -60,6 +69,16 @@ ssh "$USER@devvm.machine"
 ```sh
 ./scripts/ssh
 ```
+
+`init` と `up` は SSH コマンドと次のような OpenSSH config を表示します。
+
+```sshconfig
+Host devvm.machine
+    HostName devvm.machine
+    User <macOS user name>
+```
+
+表示は `DEVVM_NAME`、`DEVVM_DNS_DOMAIN`、`DEVVM_SSH_USER` を反映します。必要なら手動で `~/.ssh/config` に追加してください。スクリプトはこのファイルを変更せず、使用する秘密鍵を決められないため `IdentityFile` も出力しません。
 
 ## 初回の開発開始
 
@@ -100,6 +119,7 @@ codex
 
 - Node.js 22 / npm
 - Codex CLI (`@openai/codex`)
+- iro (`github.com/r-agatsuma/iro/cmd/iro@latest`)
 - Git / Git LFS / GitHub CLI (`gh`)
 - `jq`, `ripgrep`, `fd`, `fzf`
 - `build-essential`, `bubblewrap`
@@ -116,7 +136,8 @@ codex
 
 Dockerfile は multi-stage 構成です。
 
-- `devvm-base`: systemd、SSH、Codex CLI、共通の開発ツールを含む共通ベースです。通常はここを変更する必要はありません。
+- `iro-builder`: Go で最新版の iro をビルドします。実行ファイルだけを `/usr/local/bin/iro` にコピーし、`iro version` で動作確認します。Go toolchain は最終イメージに持ち込みません。
+- `devvm-base`: systemd、SSH、Codex CLI、iro、共通の開発ツールを含む共通ベースです。通常はここを変更する必要はありません。
 - `dev`: 実際に build される最終 stage です。Python、Go、Rust、DB client、プロジェクト固有 CLI など、必要な開発ツールはこの stage に追加してください。
 
 Dockerfile の末尾にある `FROM devvm-base AS dev` 以降を自由に編集できます。例えば Python を追加する場合:
@@ -130,7 +151,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 ```
 
-Dockerfile を変更した場合は、既存 machine を `./scripts/destroy` で削除してから `./scripts/up` で作り直してください。
+Dockerfile を変更した場合は、既存 machine を `./scripts/destroy` で削除してから `./scripts/init` で作り直してください。
 
 ## ライフサイクル
 
@@ -151,8 +172,10 @@ Dockerfile を変更した場合は、既存 machine を `./scripts/destroy` で
 DEVVM_NAME=mydev \
 DEVVM_CPUS=4 \
 DEVVM_MEMORY=4G \
-./scripts/up
+./scripts/init
 ```
+
+`DEVVM_IMAGE`、`DEVVM_CPUS`、`DEVVM_MEMORY` は `init` での構築時に使用します。以降の操作でも同じ `DEVVM_NAME` と接続設定を指定してください。`up` は既存 machine のリソース設定を変更しません。
 
 利用可能な環境変数:
 

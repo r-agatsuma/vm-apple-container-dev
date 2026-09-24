@@ -6,53 +6,14 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 require_cmd container
 require_cmd ssh
-require_cmd awk
+require_cmd grep
 
-if ! container system status >/dev/null 2>&1; then
-    log "starting Apple container services"
-    container system start
-fi
+ensure_container_services
+ensure_dns_domain
 
-if ! container system dns ls -q 2>/dev/null | grep -Fqx "$DEVVM_DNS_DOMAIN"; then
-    log "creating local DNS domain '$DEVVM_DNS_DOMAIN' (sudo required)"
-    sudo container system dns create "$DEVVM_DNS_DOMAIN"
-fi
-
-if machine_exists; then
-    log "reusing machine $DEVVM_NAME"
-    assert_home_mount_none
-    container machine run -n "$DEVVM_NAME" -- true >/dev/null
-else
-    [ -d "$HOME/.ssh" ] || die "$HOME/.ssh does not exist"
-
-    # Public keys are build input. To use a different key set, change this glob.
-    set -- "$HOME"/.ssh/id_*.pub
-    [ -f "$1" ] || die "no public keys found in $HOME/.ssh/id_*.pub"
-
-    AUTHORIZED_KEYS="$REPO_ROOT/.authorized_keys"
-    trap 'rm -f "$AUTHORIZED_KEYS"' EXIT HUP INT TERM
-
-    cat "$@" | awk 'NF && !seen[$0]++' > "$AUTHORIZED_KEYS"
-    [ -s "$AUTHORIZED_KEYS" ] || die "authorized_keys build input is empty"
-
-    log "building $DEVVM_IMAGE with host public keys"
-    container build -t "$DEVVM_IMAGE" "$REPO_ROOT"
-
-    log "creating machine $DEVVM_NAME (home mount disabled)"
-    container machine create \
-        --name "$DEVVM_NAME" \
-        --set-default \
-        --cpus "$DEVVM_CPUS" \
-        --memory "$DEVVM_MEMORY" \
-        --home-mount none \
-        "$DEVVM_IMAGE"
-fi
-
-log "checking sshd"
-container machine run -n "$DEVVM_NAME" -- systemctl is-active --quiet ssh
-container machine run -n "$DEVVM_NAME" -- /usr/sbin/sshd -T | grep -E \
-    '^(pubkeyauthentication|authenticationmethods|passwordauthentication|kbdinteractiveauthentication|permitrootlogin) '
-
-printf '\nReady.\n'
-printf '  %s\n' "$SCRIPT_DIR/ssh"
-printf '  ssh %s@%s.%s\n' "$DEVVM_SSH_USER" "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN"
+machine_exists || die "machine '$DEVVM_NAME' does not exist; run ./scripts/init"
+log "reusing machine $DEVVM_NAME"
+assert_home_mount_none
+container machine run -n "$DEVVM_NAME" -- true >/dev/null
+validate_ssh
+print_connection_info

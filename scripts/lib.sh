@@ -25,7 +25,8 @@ require_cmd() {
 }
 
 machine_exists() {
-    container machine ls -q 2>/dev/null | grep -Fqx "$DEVVM_NAME"
+    machine_names=$(container machine ls -q) || die "could not list machines"
+    printf '%s\n' "$machine_names" | grep -Fqx "$DEVVM_NAME"
 }
 
 assert_home_mount_none() {
@@ -38,4 +39,46 @@ assert_home_mount_none() {
         printf '%s\n' "Then stop and restart the machine before running this script again." >&2
         exit 1
     }
+}
+
+ensure_container_services() {
+    if ! container system status >/dev/null 2>&1; then
+        log "starting Apple container services"
+        container system start
+    fi
+}
+
+ensure_dns_domain() {
+    if ! container system dns ls -q 2>/dev/null | grep -Fqx "$DEVVM_DNS_DOMAIN"; then
+        require_cmd sudo
+        log "creating local DNS domain '$DEVVM_DNS_DOMAIN' (sudo required)"
+        sudo container system dns create "$DEVVM_DNS_DOMAIN"
+    fi
+}
+
+validate_ssh() {
+    log "checking sshd"
+    container machine run -n "$DEVVM_NAME" -- systemctl is-active --quiet ssh
+    ssh_config=$(container machine run -n "$DEVVM_NAME" -- /usr/sbin/sshd -T)
+    for setting in \
+        'pubkeyauthentication yes' \
+        'authenticationmethods publickey' \
+        'passwordauthentication no' \
+        'kbdinteractiveauthentication no' \
+        'permitemptypasswords no' \
+        'permitrootlogin no' \
+        'usedns no' \
+        'gssapiauthentication no'; do
+        printf '%s\n' "$ssh_config" | grep -Fqx "$setting" || die "SSH policy mismatch: expected '$setting'"
+        printf '%s\n' "$setting"
+    done
+}
+
+print_connection_info() {
+    printf '\nReady.\n'
+    printf '  %s\n' "$SCRIPT_DIR/ssh"
+    printf '  ssh %s@%s.%s\n' "$DEVVM_SSH_USER" "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN"
+    printf '\nOpenSSH config (add manually to ~/.ssh/config):\n'
+    printf 'Host %s.%s\n    HostName %s.%s\n    User %s\n' \
+        "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN" "$DEVVM_NAME" "$DEVVM_DNS_DOMAIN" "$DEVVM_SSH_USER"
 }
