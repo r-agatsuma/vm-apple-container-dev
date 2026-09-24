@@ -26,6 +26,7 @@ case "$*" in
         ;;
     machine\ create\ *) test ! -e "$REPO/.authorized_keys" ;;
     *'/usr/sbin/sshd -T')
+        [ "$*" = "machine run -n $DEVVM_NAME --root -- /usr/sbin/sshd -T" ] || exit 1
         [ "${SSHD_FAIL:-0}" = 0 ] || exit 1
         printf '%s\n' \
             'pubkeyauthentication yes' 'authenticationmethods publickey' \
@@ -59,7 +60,10 @@ class LifecycleTest(unittest.TestCase):
         mock = self.bin / 'container'
         mock.write_text(MOCK)
         mock.chmod(0o755)
-        self.env = dict(os.environ, PATH=str(self.bin) + ':' + os.environ['PATH'],
+        # Only lifecycle dependencies are available; host ssh is deliberately absent.
+        for command in ['dirname', 'id', 'awk', 'grep', 'rm', 'cp']:
+            (self.bin / command).symlink_to(shutil.which(command))
+        self.env = dict(os.environ, PATH=str(self.bin),
                         HOME=str(self.home), REPO=str(self.repo),
                         CALLS=str(self.base / 'calls'), CAPTURE=str(self.base / 'keys'),
                         DEVVM_NAME='testvm', DEVVM_DNS_DOMAIN='localvm',
@@ -78,9 +82,19 @@ class LifecycleTest(unittest.TestCase):
         return (self.base / 'calls').read_text()
 
     def connection(self, result):
-        self.assertIn('ssh tester@testvm.localvm', result.stdout)
+        self.assertIn('ssh testvm.localvm', result.stdout)
         self.assertIn('Host testvm.localvm\n    HostName testvm.localvm\n    User tester', result.stdout)
-        self.assertNotIn('IdentityFile', result.stdout)
+        self.assertEqual([line.strip() for line in result.stdout.splitlines()
+                          if 'IdentityFile' in line], ['IdentityFile ~/.ssh/<private-key>'])
+        self.assertIn('manually add', result.stdout)
+        self.assertIn('machine run -n testvm -- systemctl is-active --quiet ssh', self.calls())
+        self.assertIn('machine run -n testvm --root -- /usr/sbin/sshd -T', self.calls())
+
+    def test_public_commands(self):
+        for name in ['init', 'up', 'destroy']:
+            self.assertTrue(os.access(ROOT / 'scripts' / name, os.X_OK))
+        for name in ['ssh', 'status', 'stop']:
+            self.assertFalse((ROOT / 'scripts' / name).exists())
 
     def key(self, source, content='ssh-ed25519 AAAA test\n'):
         path = self.home / '.ssh/id_test.pub' if source == 'host' else self.repo / 'pubkeys/test.pub'
@@ -137,10 +151,15 @@ class LifecycleTest(unittest.TestCase):
         self.assertNotIn('machine create', self.calls())
 
     def test_ssh_failures(self):
-        for env in [{'PASSWORD': 'yes'}, {'SSH_DOWN': '1'}, {'SSHD_FAIL': '1'}]:
-            with self.subTest(env=env):
-                result = self.run_script('up', ok=False, EXISTS='1', **env)
-                self.assertNotIn('Ready.', result.stdout)
+        self.key('host')
+        for name in ['init', 'up']:
+            for env in [{'PASSWORD': 'yes'}, {'SSH_DOWN': '1'}, {'SSHD_FAIL': '1'}]:
+                with self.subTest(name=name, env=env):
+                    result = self.run_script(name, ok=False,
+                                             EXISTS='1' if name == 'up' else '0', **env)
+                    self.assertNotIn('Ready.', result.stdout)
+                    self.assertNotIn('OpenSSH config', result.stdout)
+                    self.assertNotIn('Host testvm.localvm', result.stdout)
 
     def test_list_failure(self):
         self.run_script('init', ok=False, LIST_FAIL='1')

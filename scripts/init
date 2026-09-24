@@ -5,7 +5,6 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib.sh"
 
 require_cmd container
-require_cmd ssh
 require_cmd awk
 require_cmd grep
 require_cmd rm
