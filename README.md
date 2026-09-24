@@ -1,4 +1,4 @@
-# apple-devvm
+# vm-apple-container-dev
 
 Apple `container machine` 上で動かす、OCI イメージベースの小さな永続 Linux 開発 VM です。
 
@@ -29,8 +29,8 @@ Apple `container machine` 上で動かす、OCI イメージベースの小さ�
 ## クイックスタート
 
 ```sh
-git clone https://github.com/r-agatsuma/apple-devvm.git
-cd apple-devvm
+git clone https://github.com/r-agatsuma/vm-apple-container-dev.git
+cd vm-apple-container-dev
 
 ./scripts/up
 ./scripts/ssh
