@@ -154,6 +154,17 @@ tmux attach -t dev
 
 セッションが継続するのは VM が稼働している間です。VM の停止や再起動をまたいでプロセスが保持されるわけではありません。
 
+## ロケール・タイムゾーン・フォント
+
+`devvm-base` の既定値は次のとおりです。
+
+- Default locale: `C.UTF-8`
+- Available Japanese locale: `ja_JP.UTF-8`
+- Timezone: `Asia/Tokyo`
+- CJK fonts: Noto CJK
+
+既定の CLI 診断メッセージは英語のままです。`C.UTF-8` で UTF-8 の日本語テキストやファイル名を扱え、Noto CJK と fontconfig により、PDF、headless browser、画像、文書などの guest-side rendering でも日本語を利用できます。locale と timezone は macOS から引き継ぎません。別の値が必要な場合は Dockerfile をカスタマイズしてください。
+
 ## 開発環境のカスタマイズ
 
 Dockerfile は multi-stage 構成です。
