@@ -29,21 +29,39 @@ Apple `container machine` 上で動かす、OCI イメージベースの小さ�
 ## クイックスタート
 
 ```sh
-git clone https://github.com/r-agatsuma/vm-apple-container-dev.git
-cd vm-apple-container-dev
+git clone https://github.com/r-agatsuma/vm-apple-container-dev.git vm-tailscale-debug
+cd vm-tailscale-debug
 
+# 必要に応じて Dockerfile の最後の dev stage を用途別に編集
 ./scripts/init
 # 表示された案内に従って ~/.ssh/config を設定してから接続
-ssh devvm.machine
+ssh vm-tailscale-debug.machine
+
+# 作業を終えたら停止し、後で同じ永続 machine を起動
+./scripts/stop
+./scripts/up
+
+# 永続 state を完全に破棄する場合のみ
+./scripts/destroy
 ```
+
+checkout ディレクトリ名が machine 名になります。この例のイメージは `local/vm-tailscale-debug:latest` です。別の用途には別の checkout を作ります。
+
+```sh
+git clone https://github.com/r-agatsuma/vm-apple-container-dev.git vm-network-lab
+cd vm-network-lab
+./scripts/init
+```
+
+こちらは `vm-network-lab`、`local/vm-network-lab:latest`、`vm-network-lab.machine` を使用し、先の machine に影響しません。
 
 初回の `./scripts/init` は次を行います。
 
 1. 必要であれば Apple `container` service を起動します。
 2. 必要であればローカルの `.machine` DNS domain を作成します。この処理では `sudo` を使用します。
 3. `~/.ssh/id_*.pub` と `pubkeys/*.pub` の空でない行を重複排除して一時的な build input にまとめ、`/etc/skel/.ssh/authorized_keys` としてイメージへ組み込みます。Apple container machine は初回起動時に `/etc/skel` を新しい Linux user の home へコピーします。
-4. Dockerfile から `local/devvm:latest` をビルドします。
-5. `devvm` という名前で、2 CPU / 2 GiB RAM、host home sharing 無効の永続 machine を作成します。
+4. Dockerfile から `local/<machine 名>:latest` をビルドします。
+5. checkout 名で、2 CPU / 2 GiB RAM、host home sharing 無効の永続 machine を作成します。Apple Container のグローバルな default machine は変更しません。
 6. `homeMount=none` と SSH service の起動を確認し、root で `sshd -T` を実行して公開鍵認証のみの設定を検証します。
 7. 検証に成功した場合のみ、OpenSSH config の例と接続手順を表示します。
 
@@ -63,8 +81,8 @@ Dockerfile または公開鍵を変更した場合は、明示的に再構築し
 `init` と `up` は検証に成功すると、次のような OpenSSH config を表示します。
 
 ```sshconfig
-Host devvm.machine
-    HostName devvm.machine
+Host vm-tailscale-debug.machine
+    HostName vm-tailscale-debug.machine
     User <macOS user name>
 ```
 
@@ -77,7 +95,7 @@ Host devvm.machine
 秘密鍵の選択には `ssh-agent` などの標準 OpenSSH の仕組みも利用できます。設定後はホストの OpenSSH で接続します。
 
 ```sh
-ssh devvm.machine
+ssh vm-tailscale-debug.machine
 ```
 
 責任の範囲は次のとおりです。
@@ -136,7 +154,7 @@ codex
 Codex CLI は image build 時に npm から最新版をグローバルインストールします。初回は VM 内で `codex` を起動してログインしてください。ログイン情報は persistent machine filesystem に保持されます。
 
 ```sh
-ssh devvm.machine
+ssh vm-tailscale-debug.machine
 codex
 ```
 
@@ -188,28 +206,34 @@ Dockerfile を変更した場合は、既存 machine を `./scripts/destroy` で
 
 ## ライフサイクル
 
-公開ライフサイクルコマンドは次の3つです。`scripts/lib.sh` は内部実装です。
+公開ライフサイクルコマンドは次の4つです。`scripts/lib.sh` は内部実装です。
 
 ```sh
 ./scripts/init
 ./scripts/up
+./scripts/stop
 ./scripts/destroy
 ```
 
-`init` はイメージのビルドと永続 machine の作成、`up` は既存 machine の起動・再利用を行います。両方ともセキュリティ状態の検証後に SSH 設定を案内します。`destroy` は確認後に machine とその永続 state を削除します。OCI image と共有の `.machine` DNS domain は削除しません。
+`init` はイメージのビルドと永続 machine の作成、`up` は既存 machine の起動・再利用を行います。両方ともセキュリティ状態の検証後に SSH 設定を案内します。`stop` はその checkout の machine を正常にシャットダウンします。停止後に `up` を実行すると、同じ永続 machine が再起動します。machine がない場合、`stop` はエラーを返します。
 
-状態確認や停止には直接 `container` を使用します（名前を変更した場合は `devvm` を置き換えてください）。停止しても VM filesystem は保持されます。
+`stop` によって実行中のプロセス、RAM の内容、tmux セッションは失われます。root filesystem、clone した repository、tool credential、shell history、SSH host key、machine 設定は保持されます。suspend、hibernate、RAM snapshot ではありません。
+
+`destroy` は確認後に machine と永続 filesystem を削除します。repository、tool credential、shell history、SSH host key、machine 設定も失われます。OCI image と共有の `.machine` DNS domain は残ります。
+
+状態確認には直接 `container` を使用できます（名前は checkout に合わせてください）。
 
 ```sh
 container machine ls
-container machine inspect devvm
-container machine run -n devvm -- systemctl status ssh --no-pager
-container machine stop devvm
+container machine inspect vm-tailscale-debug
+container machine run -n vm-tailscale-debug -- systemctl status ssh --no-pager
 ```
 
 ## 設定
 
-少数の machine 設定は環境変数で上書きできます。
+通常は checkout ディレクトリの basename を machine 名に使い、イメージ名はその machine 名から `local/<machine 名>:latest` と決めます。machine 名は小文字 ASCII の DNS label（1～63 文字、英数字とハイフン、先頭・末尾は英数字）である必要があります。無効なディレクトリ名は自動変換せず、ビルド前にエラーにします。ディレクトリ名を変更するか、`DEVVM_NAME` を明示してください。
+
+環境変数で上書きできます。`DEVVM_NAME` と `DEVVM_IMAGE` は通常の複数 machine 運用では不要で、ディレクトリ名やイメージ名を変える必要がある場合の例外的な指定です。
 
 ```sh
 DEVVM_NAME=mydev \
@@ -218,12 +242,12 @@ DEVVM_MEMORY=4G \
 ./scripts/init
 ```
 
-`DEVVM_IMAGE`、`DEVVM_CPUS`、`DEVVM_MEMORY` は `init` での構築時に使用します。以降の操作でも同じ `DEVVM_NAME` と接続設定を指定してください。`up` は既存 machine のリソース設定を変更しません。
+`DEVVM_IMAGE`、`DEVVM_CPUS`、`DEVVM_MEMORY` は `init` での構築時に使用します。`DEVVM_NAME` を上書きした場合、`DEVVM_IMAGE` の既定値もその名前から決まります。以降の操作でも同じ `DEVVM_NAME` と接続設定を指定してください。`up` は既存 machine のリソース設定を変更しません。
 
 利用可能な環境変数:
 
-- `DEVVM_NAME` — デフォルト: `devvm`
-- `DEVVM_IMAGE` — デフォルト: `local/devvm:latest`
+- `DEVVM_NAME` — デフォルト: checkout ディレクトリ名。明示指定時も同じ名前の検証を行います。
+- `DEVVM_IMAGE` — デフォルト: `local/$DEVVM_NAME:latest`
 - `DEVVM_CPUS` — デフォルト: `2`
 - `DEVVM_MEMORY` — デフォルト: `2G`
 - `DEVVM_DNS_DOMAIN` — デフォルト: `machine`

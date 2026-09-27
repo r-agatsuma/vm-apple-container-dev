@@ -17,7 +17,7 @@ case "$*" in
     'system dns ls -q') printf '%s\n' "$DEVVM_DNS_DOMAIN" ;;
     'machine ls -q')
         [ "${LIST_FAIL:-0}" = 0 ] || exit 1
-        [ "${EXISTS:-0}" = 0 ] || printf '%s\n' "$DEVVM_NAME"
+        [ "${EXISTS:-0}" = 0 ] || printf '%s\n' "${EXISTING_MACHINE:-$DEVVM_NAME}"
         ;;
     machine\ inspect\ *) printf '{"homeMount":"%s"}\n' "${MOUNT:-none}" ;;
     build\ *)
@@ -26,7 +26,7 @@ case "$*" in
         ;;
     machine\ create\ *) test ! -e "$REPO/.authorized_keys" ;;
     *'/usr/sbin/sshd -T')
-        [ "$*" = "machine run -n $DEVVM_NAME --root -- /usr/sbin/sshd -T" ] || exit 1
+        [ "$*" = "machine run -n ${EXPECTED_NAME:-$DEVVM_NAME} --root -- /usr/sbin/sshd -T" ] || exit 1
         [ "${SSHD_FAIL:-0}" = 0 ] || exit 1
         printf '%s\n' \
             'pubkeyauthentication yes' 'authenticationmethods publickey' \
@@ -91,9 +91,9 @@ class LifecycleTest(unittest.TestCase):
         self.assertIn('machine run -n testvm --root -- /usr/sbin/sshd -T', self.calls())
 
     def test_public_commands(self):
-        for name in ['init', 'up', 'destroy']:
+        for name in ['init', 'up', 'stop', 'destroy']:
             self.assertTrue(os.access(ROOT / 'scripts' / name, os.X_OK))
-        for name in ['ssh', 'status', 'stop']:
+        for name in ['ssh', 'status']:
             self.assertFalse((ROOT / 'scripts' / name).exists())
 
     def key(self, source, content='ssh-ed25519 AAAA test\n'):
@@ -112,6 +112,57 @@ class LifecycleTest(unittest.TestCase):
                 self.assertEqual((self.base / 'keys').read_text(), 'ssh-ed25519 AAAA test\n')
                 self.assertIn('machine create --name testvm', self.calls())
                 self.assertIn('--home-mount none', self.calls())
+                self.assertNotIn('--set-default', self.calls())
+
+    def test_directory_defaults_and_independent_checkouts(self):
+        self.key('host')
+        for name in ['vm-tailscale-debug', 'vm-network-lab']:
+            with self.subTest(name=name):
+                checkout = self.base / name
+                shutil.copytree(self.repo, checkout)
+                self.repo = checkout
+                self.env.update(REPO=str(checkout), DEVVM_NAME='', DEVVM_IMAGE='',
+                                DEVVM_DNS_DOMAIN='machine', EXPECTED_NAME=name)
+                result = self.run_script('init')
+                self.assertIn(f'Host {name}.machine', result.stdout)
+                self.assertIn(f'build -t local/{name}:latest {checkout}', self.calls())
+                self.assertIn(f'machine create --name {name}', self.calls())
+                self.assertNotIn('--set-default', self.calls())
+                self.run_script('stop', EXISTS='1', EXISTING_MACHINE=name)
+                self.assertIn(f'machine stop {name}', self.calls())
+                self.run_script('up', EXISTS='1', EXISTING_MACHINE=name)
+                self.assertIn(f'machine run -n {name} -- systemctl is-active --quiet ssh',
+                              self.calls())
+                self.assertEqual(self.calls().count(f'build -t local/{name}:latest'), 1)
+
+    def test_name_and_image_overrides(self):
+        self.key('host')
+        self.run_script('init', DEVVM_IMAGE='custom/image:v1')
+        self.assertIn('build -t custom/image:v1', self.calls())
+        self.assertIn('machine create --name testvm', self.calls())
+
+    def test_name_length_boundary(self):
+        self.key('host')
+        name = 'a' * 63
+        self.run_script('init', DEVVM_NAME=name, EXPECTED_NAME=name)
+        self.assertIn(f'build -t local/{name}:latest', self.calls())
+        self.assertIn(f'machine create --name {name}', self.calls())
+
+    def test_invalid_machine_names_fail_before_build_or_create(self):
+        self.key('host')
+        for name in ['MyVM', 'my_vm', 'my vm', '-vm', 'vm-', 'a' * 64, 'évm']:
+            with self.subTest(name=name):
+                result = self.run_script('init', ok=False, DEVVM_NAME=name)
+                self.assertIn('invalid DEVVM_NAME', result.stderr)
+        self.assertFalse((self.base / 'calls').exists())
+
+        checkout = self.base / 'MyVM'
+        shutil.copytree(self.repo, checkout)
+        self.repo = checkout
+        self.env.update(REPO=str(checkout), DEVVM_NAME='')
+        result = self.run_script('init', ok=False)
+        self.assertIn('rename the checkout directory or set DEVVM_NAME', result.stderr)
+        self.assertFalse((self.base / 'calls').exists())
 
     def test_no_keys(self):
         self.run_script('init', ok=False)
@@ -171,6 +222,20 @@ class LifecycleTest(unittest.TestCase):
         self.assertNotIn('machine rm', self.calls())
         self.run_script('destroy', EXISTS='1', answer='yes\n')
         self.assertIn('machine rm testvm', self.calls())
+        self.assertNotIn('machine stop', self.calls())
+
+    def test_stop_existing_and_stopped_machine(self):
+        for _ in range(2):
+            self.run_script('stop', EXISTS='1')
+        self.assertEqual(self.calls().count('machine stop testvm'), 2)
+        self.connection(self.run_script('up', EXISTS='1'))
+        self.assertNotIn('build ', self.calls())
+        self.assertNotIn('machine rm', self.calls())
+
+    def test_stop_missing_machine(self):
+        result = self.run_script('stop', ok=False)
+        self.assertIn("machine 'testvm' does not exist", result.stderr)
+        self.assertNotIn('machine stop', self.calls())
 
 
 if __name__ == '__main__':
