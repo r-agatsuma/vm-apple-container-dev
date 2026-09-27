@@ -9,7 +9,9 @@ RUN iro version
 
 ARG NODE_MAJOR=22
 
-ENV container=container
+ENV container=container \
+    LANG=C.UTF-8 \
+    TZ=Asia/Tokyo
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -19,6 +21,8 @@ RUN apt-get update \
         curl \
         dbus \
         fd-find \
+        fontconfig \
+        fonts-noto-cjk \
         fzf \
         gh \
         git \
@@ -28,18 +32,33 @@ RUN apt-get update \
         iputils-ping \
         jq \
         less \
+        locales \
         openssh-server \
         ripgrep \
         sudo \
         systemd \
         systemd-sysv \
         tmux \
+        tzdata \
         unzip \
         vim-tiny \
         wget \
         zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Keep English command-line diagnostics while making Japanese locale data
+# available. The image timezone is fixed and does not follow the macOS host.
+RUN sed -i 's/^# *ja_JP.UTF-8 UTF-8$/ja_JP.UTF-8 UTF-8/' /etc/locale.gen \
+    && locale-gen \
+    && ln -snf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime \
+    && printf '%s\n' 'Asia/Tokyo' > /etc/timezone \
+    && fc-cache -f \
+    && test "$LANG" = 'C.UTF-8' \
+    && locale -a | grep -Eiq '^ja_JP\.(utf8|UTF-8)$' \
+    && test "$(readlink -f /etc/localtime)" = '/usr/share/zoneinfo/Asia/Tokyo' \
+    && test "$(date +%Z)" = 'JST' \
+    && fc-match -f '%{family}\n' ':lang=ja' | grep -q 'Noto Sans CJK'
 
 # Debian installs fd-find as `fdfind`; expose the conventional `fd` name too.
 RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
