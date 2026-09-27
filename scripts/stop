@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib.sh"
+
+require_cmd container
+
+ensure_container_services
+machine_exists || die "machine '$DEVVM_NAME' does not exist; run ./scripts/init"
+container machine stop "$DEVVM_NAME"
+log "stopped machine $DEVVM_NAME"

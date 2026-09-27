@@ -4,8 +4,14 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
-DEVVM_NAME=${DEVVM_NAME:-devvm}
-DEVVM_IMAGE=${DEVVM_IMAGE:-local/devvm:latest}
+INSTANCE_NAME=${REPO_ROOT##*/}
+if [ -n "${DEVVM_NAME:-}" ]; then
+    NAME_SOURCE=override
+else
+    NAME_SOURCE=directory
+fi
+DEVVM_NAME=${DEVVM_NAME:-$INSTANCE_NAME}
+DEVVM_IMAGE=${DEVVM_IMAGE:-local/$DEVVM_NAME:latest}
 DEVVM_CPUS=${DEVVM_CPUS:-2}
 DEVVM_MEMORY=${DEVVM_MEMORY:-2G}
 DEVVM_DNS_DOMAIN=${DEVVM_DNS_DOMAIN:-machine}
@@ -19,6 +25,25 @@ die() {
     printf '%s\n' "error: $*" >&2
     exit 1
 }
+
+validate_machine_name() {
+    case "$DEVVM_NAME" in
+        ''|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*|-*|*-)
+            invalid=1
+            ;;
+        *)
+            invalid=0
+            ;;
+    esac
+    if [ "$invalid" -ne 0 ] || [ "${#DEVVM_NAME}" -gt 63 ]; then
+        if [ "$NAME_SOURCE" = directory ]; then
+            die "invalid machine name '$DEVVM_NAME' from checkout directory; rename the checkout directory or set DEVVM_NAME to a lowercase DNS label (1-63 ASCII characters: a-z, 0-9, hyphen; no leading or trailing hyphen)"
+        fi
+        die "invalid DEVVM_NAME '$DEVVM_NAME'; use a lowercase DNS label (1-63 ASCII characters: a-z, 0-9, hyphen; no leading or trailing hyphen)"
+    fi
+}
+
+validate_machine_name
 
 require_cmd() {
     command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"

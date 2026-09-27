@@ -15,7 +15,6 @@ printf "Delete machine '%s' and all of its persistent state? [y/N] " "$DEVVM_NAM
 IFS= read -r answer
 case "$answer" in
     y|Y|yes|YES)
-        container machine stop "$DEVVM_NAME" >/dev/null 2>&1 || true
         container machine rm "$DEVVM_NAME"
         ;;
     *)
